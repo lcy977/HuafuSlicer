@@ -55,6 +55,8 @@ set_target_properties(appHuafuSlicer PROPERTIES
 target_link_libraries(appHuafuSlicer
     PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::OpenGL Qt6::Concurrent Qt6::Svg
     PRIVATE OpenGL::GL
+    PRIVATE libslic3r
+    PRIVATE libslicgui
 )
 
 include(GNUInstallDirs)

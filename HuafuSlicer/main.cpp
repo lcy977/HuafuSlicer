@@ -15,7 +15,7 @@
 
 #include "OpenGLViewport.h"
 #include "WindowHelper.h"
-
+#include "HuafuAppBootstrap.hpp"
 static void fileMessageHandler(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
     Q_UNUSED(context);
@@ -76,6 +76,8 @@ int main(int argc, char *argv[])
     qmlRegisterType<WindowHelper>("Youtian3D", 1, 0, "WindowHelper");
 
     QQmlApplicationEngine engine;
+    
+    huafuAttachSlicerAppToQmlEngine(engine);
     QObject::connect(
         &engine,
         &QQmlApplicationEngine::objectCreationFailed,

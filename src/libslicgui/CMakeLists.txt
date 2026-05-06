@@ -26,6 +26,8 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party)
 #EIGEN
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/eigen)
 
+#TBB
+find_package(TBB REQUIRED COMPONENTS tbb)
 
 
 
@@ -36,11 +38,11 @@ file(GLOB_RECURSE libslicgui_headers "*.hpp")
 find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Widgets Core)
 
 add_library(libslicgui STATIC ${libslicgui_sources} ${libslicgui_headers})
-target_compile_definitions(libslicgui PRIVATE EIGEN_HAS_STD_RESULT_OF=0)
+target_compile_definitions(libslicgui PRIVATE EIGEN_HAS_STD_RESULT_OF=0 _USE_MATH_DEFINES UNICODE _UNICODE)
 target_link_libraries(libslicgui PRIVATE libslic3r Qt6::Widgets Qt6::Core Qt6::Quick Qt6::QuickControls2 Qt6::OpenGL)
 
 target_link_libraries(libslicgui PRIVATE Boost::filesystem Boost::system)
 target_link_libraries(libslicgui PRIVATE OpenSSL::Crypto OpenSSL::SSL)
 target_include_directories(libslicgui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-
+target_link_libraries(libslicgui PRIVATE TBB::tbb)
 
