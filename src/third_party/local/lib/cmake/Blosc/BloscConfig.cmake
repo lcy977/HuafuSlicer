@@ -1,0 +1,24 @@
+include(CMakeFindDependencyMacro)
+
+include("${CMAKE_CURRENT_LIST_DIR}/BloscTargets.cmake")
+
+function(_blosc_remap_configs from_Cfg to_Cfg)
+    string(TOUPPER ${from_Cfg} from_CFG)
+    string(TOLOWER ${from_Cfg} from_cfg)
+
+    if(NOT EXISTS ${CMAKE_CURRENT_LIST_DIR}/BloscTargets-${from_cfg}.cmake)
+        foreach(tgt IN ITEMS blosc_static blosc_shared blosc)
+            if(TARGET Blosc::${tgt})
+                set_target_properties(Blosc::${tgt} PROPERTIES
+                    MAP_IMPORTED_CONFIG_${from_CFG} ${to_Cfg})
+            endif()
+        endforeach()
+    endif()
+endfunction()
+
+# MSVC will try to link RelWithDebInfo or MinSizeRel target with debug config
+# if no matching installation is present which would result in link errors.
+if(MSVC)
+    _blosc_remap_configs(RelWithDebInfo Release)
+    _blosc_remap_configs(MinSizeRel Release)
+endif()

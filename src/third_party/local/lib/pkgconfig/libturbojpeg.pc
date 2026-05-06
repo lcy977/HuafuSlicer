@@ -1,0 +1,10 @@
+prefix=E:/slicer/OrcaSlicer/deps/build/OrcaSlicer_dep/usr/local/
+exec_prefix=E:/slicer/OrcaSlicer/deps/build/OrcaSlicer_dep/usr/local/
+libdir=E:/slicer/OrcaSlicer/deps/build/OrcaSlicer_dep/usr/local//lib
+includedir=E:/slicer/OrcaSlicer/deps/build/OrcaSlicer_dep/usr/local//include
+
+Name: libturbojpeg
+Description: A SIMD-accelerated JPEG codec that provides the TurboJPEG API
+Version: 3.0.1
+Libs: -L${libdir} -lturbojpeg
+Cflags: -I${includedir}
