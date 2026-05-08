@@ -12,9 +12,12 @@ add_library(clipper STATIC
 target_include_directories(clipper SYSTEM
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../eigen
+        # clipper.hpp / clipper.cpp include <libslic3r/Int128.hpp> — search root is src/
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
 
-target_link_libraries(clipper 
-    PUBLIC eigen
-    PRIVATE TBB::tbb TBB::tbbmalloc
+# clipper.hpp uses oneapi/tbb/scalable_allocator.h; no imported target named "eigen" in this repo.
+target_link_libraries(clipper
+    PUBLIC TBB::tbb TBB::tbbmalloc
 )

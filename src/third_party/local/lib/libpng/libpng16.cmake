@@ -52,8 +52,9 @@ endif()
 # Create imported target png_static
 add_library(png_static STATIC IMPORTED)
 
+# Consumer must call find_package(ZLIB REQUIRED) before including this file.
 set_target_properties(png_static PROPERTIES
-  INTERFACE_LINK_LIBRARIES "E:/slicer/OrcaSlicer/deps/build/OrcaSlicer_dep/usr/local/lib/zlib.lib"
+  INTERFACE_LINK_LIBRARIES "ZLIB::ZLIB"
 )
 
 if(CMAKE_VERSION VERSION_LESS 2.8.12)

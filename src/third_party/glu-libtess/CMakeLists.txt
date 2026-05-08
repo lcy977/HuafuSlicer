@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.13)
 
+# Parent app may be CXX-only; this library is C sources only.
+enable_language(C)
+
 project(glu-libtess)
 
 add_library(glu-libtess STATIC

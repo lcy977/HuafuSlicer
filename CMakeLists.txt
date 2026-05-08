@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(MSVC)
   set_property(GLOBAL PROPERTY VS_GLOBAL_BuildInParallel false)
+  # Boost auto_link.hpp maps VS2022+ to vc143, but static libs from b2 are tagged vc144 — pragma pulls wrong .lib names.
+  add_compile_definitions(BOOST_ALL_NO_LIB)
 endif()
 
 find_package(OpenGL REQUIRED)
@@ -15,6 +17,13 @@ qt_standard_project_setup(REQUIRES 6.5)
 
 # Ensure local CMake helpers remain discoverable.
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/src/libslic3r")
+
+# IMPORTED targets (EXPAT::expat, draco::draco, JPEG::JPEG) must exist before libslicgui/Qt resolves
+# libslic3r PUBLIC deps — MODULE-mode FindEXPAT does not define EXPAT::expat; require CONFIG packages.
+list(PREPEND CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/src/third_party/local")
+find_package(JPEG REQUIRED COMPONENTS JPEG)
+find_package(draco CONFIG REQUIRED)
+find_package(EXPAT REQUIRED CONFIG)
 
 #add_subdirectory(src/third_party)
 add_subdirectory(src/libslic3r)

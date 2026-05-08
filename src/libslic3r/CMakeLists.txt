@@ -24,12 +24,58 @@ endif ()
 set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_LIST_DIR}/../third_party/local")
 set(Boost_NO_SYSTEM_PATHS TRUE)
 set(Boost_DEBUG ON)
-find_package(Boost REQUIRED COMPONENTS filesystem system)
+find_package(Boost CONFIG REQUIRED COMPONENTS filesystem system nowide locale log iostreams)
+
+find_package(TBB REQUIRED COMPONENTS tbb tbbmalloc)
+
+set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE ON)
+find_package(CGAL REQUIRED)
+
+if(NOT TARGET mcut)
+  set(MCUT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(MCUT_BUILD_TUTORIALS OFF CACHE BOOL "" FORCE)
+  set(MCUT_BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
+  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../third_party/mcut" "${CMAKE_BINARY_DIR}/mcut")
+endif()
+
+if(NOT TARGET qhullcpp)
+  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../third_party/qhull" "${CMAKE_BINARY_DIR}/third_party/qhull")
+endif()
+
+if(NOT TARGET Clipper2)
+  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../third_party/clipper2" "${CMAKE_BINARY_DIR}/third_party/clipper2")
+endif()
+
+# ClipperLib / ClipperLib_Z (clipper.cpp + clipper_z.cpp) — used by PerimeterGenerator, Support, etc.
+if(NOT TARGET clipper)
+  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../third_party/clipper" "${CMAKE_BINARY_DIR}/third_party/clipper")
+endif()
+
+if(NOT TARGET glu-libtess)
+  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../third_party/glu-libtess" "${CMAKE_BINARY_DIR}/third_party/glu-libtess")
+endif()
+
+# libnoise (FuzzySkin: Perlin / Billow / RidgedMulti / Voronoi) — target libnoise_static, ALIAS noise::noise
+if(NOT TARGET libnoise_static)
+  add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../third_party/libnoise" "${CMAKE_BINARY_DIR}/third_party/libnoise")
+endif()
+
+find_package(JPEG REQUIRED COMPONENTS JPEG)
+# Draco: root CMake may build google/draco via FetchContent (draco::draco). Otherwise third_party/local config.
+if(NOT TARGET draco::draco)
+  find_package(draco CONFIG REQUIRED)
+endif()
+
+find_package(EXPAT REQUIRED CONFIG)
+
+find_package(ZLIB REQUIRED)
+# LibPNG built with PNG_EXPORT_SUFFIX / pnglibconf prefixes (prusaslicer_png_*); must match third_party/local/include/libpng16/pnglibconf.h
+include("${CMAKE_CURRENT_LIST_DIR}/../third_party/local/lib/libpng/libpng16.cmake")
 
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/eigen)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/semver)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/clipper)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/admesh)
+
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/dep_PNG)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/TBB/include)
 #include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/Cereal/include)
@@ -44,12 +90,15 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/libnest2d/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/clipper2/Clipper2Lib/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../libslic3r)
-include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/Draco/src/)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/local/include)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/miniz)
 include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/glu-libtess/include)
 set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/../third_party/miniz/miniz.c PROPERTIES LANGUAGE C)
-
+set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/../third_party/semver/semver.c PROPERTIES LANGUAGE C)
+set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/../third_party/nanosvg/nanosvg.c PROPERTIES LANGUAGE C)
+set_source_files_properties(${CMAKE_CURRENT_LIST_DIR}/../third_party/qoi/qoi.c PROPERTIES LANGUAGE C)
+# Vendored libnoise: headers are under third_party/libnoise/src (noise.h, module/*.h), not libnoise/noise.h under local/include.
+include_directories(${CMAKE_CURRENT_LIST_DIR}/../third_party/libnoise/src)
 
 option(BUILD_SHARED_LIBS "Build shared libs" OFF)
 
@@ -111,6 +160,13 @@ set(lisbslic3r_sources
     ArcFitter.hpp
     Arrange.cpp
     Arrange.hpp
+    # admesh: Orca/Slic3r fork includes libslic3r headers — compile into libslic3r, not a separate lib (avoids inverted deps).
+    admesh/connect.cpp
+    admesh/normals.cpp
+    admesh/shared.cpp
+    admesh/stl_io.cpp
+    admesh/stlinit.cpp
+    admesh/util.cpp
     BlacklistedLibraryCheck.cpp
     BlacklistedLibraryCheck.hpp
     BoundingBox.cpp
@@ -309,6 +365,8 @@ set(lisbslic3r_sources
     Geometry/VoronoiUtils.hpp
     Geometry/VoronoiVisualUtils.hpp
     Int128.hpp
+    IntersectionPoints.cpp
+    IntersectionPoints.hpp
     KDTreeIndirect.hpp
     Layer.cpp
     Layer.hpp
@@ -323,6 +381,8 @@ set(lisbslic3r_sources
     Measure.cpp
     Measure.hpp
     MeasureUtils.hpp
+    MeshBoolean.cpp
+    MeshBoolean.hpp
     MeshSplitImpl.hpp
     MinAreaBoundingBox.cpp
     MinAreaBoundingBox.hpp
@@ -330,6 +390,7 @@ set(lisbslic3r_sources
     MinimumSpanningTree.hpp
     miniz_extension.cpp
     miniz_extension.hpp
+    ../third_party/miniz/miniz.c
     ModelArrange.cpp
     ModelArrange.hpp
     Model.cpp
@@ -346,6 +407,8 @@ set(lisbslic3r_sources
     NormalUtils.hpp
     NSVGUtils.cpp
     NSVGUtils.hpp
+    ../third_party/nanosvg/nanosvg.c
+    ../third_party/qoi/qoi.c
     ObjectID.cpp
     ObjectID.hpp
     Optimize/BruteforceOptimizer.hpp
@@ -396,6 +459,7 @@ set(lisbslic3r_sources
     QuadricEdgeCollapse.cpp
     QuadricEdgeCollapse.hpp
     Semver.cpp
+    ../third_party/semver/semver.c
     ShortEdgeCollapse.cpp
     ShortEdgeCollapse.hpp
     ShortestPath.cpp
@@ -477,6 +541,8 @@ set(lisbslic3r_sources
     Time.hpp
     Timer.cpp
     Timer.hpp
+    Triangulation.cpp
+    Triangulation.hpp
     TriangleMesh.cpp
     TriangleMesh.hpp
     TriangleMeshDeal.cpp
@@ -489,6 +555,8 @@ set(lisbslic3r_sources
     TriangleSetSampling.hpp
     TriangulateWall.cpp
     TriangulateWall.hpp
+    TryCatchSignal.cpp
+    TryCatchSignal.hpp
     utils.cpp
     Utils.hpp
     VariableWidth.cpp
@@ -514,7 +582,18 @@ if (APPLE)
 endif ()
 
 add_library(libslic3r STATIC ${lisbslic3r_sources} )
-target_link_libraries(libslic3r PRIVATE Boost::filesystem Boost::system)
+# qhullcpp is PUBLIC: static libslic3r objects reference orgQhull::Qhull (TriangleMesh::its_convex_hull); consumers must link qhull.
+target_link_libraries(libslic3r PRIVATE Boost::filesystem Boost::system Boost::log CGAL::CGAL mcut)
+target_link_libraries(libslic3r PUBLIC qhullcpp clipper Clipper2 glu-libtess)
+# PUBLIC: TBB + Nowide symbols used from libslic3r objects must reach the final link (static lib).
+# Boost::iostreams PUBLIC: DRC.cpp uses mapped_file_source (Format/DRC.cpp); symbols must reach app link.
+target_link_libraries(libslic3r PUBLIC TBB::tbb TBB::tbbmalloc Boost::nowide Boost::locale Boost::iostreams)
+target_link_libraries(libslic3r PUBLIC JPEG::JPEG draco::draco EXPAT::expat png_static noise::noise)
+
+if(WIN32)
+  # Boost.UUID random_provider uses BCryptGenRandom (Windows CNG).
+  target_link_libraries(libslic3r PUBLIC bcrypt)
+endif()
 
 target_compile_definitions(libslic3r PRIVATE
     UNICODE
@@ -530,4 +609,19 @@ add_precompiled_header(libslic3r pchheader.hpp FORCEINCLUDE)
 target_compile_options(libslic3r PRIVATE /Zc:char8_t-)
 target_compile_definitions(libslic3r PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(libslic3r PRIVATE /bigobj)
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${lisbslic3r_sources})
+if(MSVC)
+  # MSVC /Zc:ternary (default in VS2019+) rejects some CGAL ?: involving Lazy_exact_nt<gmp_rational> inside templates (中文报错「条件表达式无效」).
+  target_compile_options(libslic3r PRIVATE /Zc:ternary-)
+  # Parallel builds: many cl.exe writing one libslic3r.pdb can still hit C1041 even with /FS (AV locks, MSBuild, etc.).
+  # /Z7 embeds debug info in .obj files so compilation does not share a PDB (linker still produces .pdb for the static lib if needed).
+  target_compile_options(libslic3r PRIVATE /FS)
+  target_compile_options(libslic3r PRIVATE $<$<CONFIG:Debug>:/Z7> $<$<CONFIG:RelWithDebInfo>:/Z7>)
+endif()
+# source_group(TREE) requires every file to be under the root; vendored C sources live under src/third_party.
+set(_libslic3r_source_group_files ${lisbslic3r_sources})
+list(FILTER _libslic3r_source_group_files EXCLUDE REGEX "^\\.\\./third_party/")
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${_libslic3r_source_group_files})
+source_group("third_party/semver" FILES ${CMAKE_CURRENT_LIST_DIR}/../third_party/semver/semver.c)
+source_group("third_party/nanosvg" FILES ${CMAKE_CURRENT_LIST_DIR}/../third_party/nanosvg/nanosvg.c)
+source_group("third_party/miniz" FILES ${CMAKE_CURRENT_LIST_DIR}/../third_party/miniz/miniz.c)
+source_group("third_party/qoi" FILES ${CMAKE_CURRENT_LIST_DIR}/../third_party/qoi/qoi.c)

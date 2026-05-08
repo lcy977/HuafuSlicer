@@ -36,7 +36,7 @@ struct all_unroller<Derived, 0>
 };
 
 template<typename Derived>
-struct all_unroller<Derived, Dynamic>
+struct all_unroller<Derived, Eigen::Dynamic>
 {
   static inline bool run(const Derived &) { return false; }
 };
@@ -63,7 +63,7 @@ struct any_unroller<Derived, 0>
 };
 
 template<typename Derived>
-struct any_unroller<Derived, Dynamic>
+struct any_unroller<Derived, Eigen::Dynamic>
 {
   static inline bool run(const Derived &) { return false; }
 };
@@ -92,7 +92,7 @@ inline bool DenseBase<Derived>::all() const
   {
     for(Index j = 0; j < cols(); ++j)
       for(Index i = 0; i < rows(); ++i)
-        if (!evaluator.coeff(i, j)) return false;
+        if (evaluator.coeff(i, j) == Scalar(0)) return false;
     return true;
   }
 }
@@ -116,7 +116,7 @@ inline bool DenseBase<Derived>::any() const
   {
     for(Index j = 0; j < cols(); ++j)
       for(Index i = 0; i < rows(); ++i)
-        if (evaluator.coeff(i, j)) return true;
+        if (evaluator.coeff(i, j) != Scalar(0)) return true;
     return false;
   }
 }
