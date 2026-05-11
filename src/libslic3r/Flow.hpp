@@ -24,11 +24,11 @@ enum FlowRole {
     frSupportTransition,  // BBS
 };
 
-class FlowError : public Slic3r::InvalidArgument
+class FlowError : public InvalidArgument
 {
 public:
-	FlowError(const std::string& what_arg) : Slic3r::InvalidArgument(what_arg) {}
-	FlowError(const char* what_arg) : Slic3r::InvalidArgument(what_arg) {}
+	FlowError(const std::string& what_arg) : InvalidArgument(what_arg) {}
+	FlowError(const char* what_arg) : InvalidArgument(what_arg) {}
 };
 
 class FlowErrorNegativeSpacing : public FlowError

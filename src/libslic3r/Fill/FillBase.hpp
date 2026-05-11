@@ -31,9 +31,9 @@ namespace FillAdaptive {
 };
 
 // Infill shall never fail, therefore the error is classified as RuntimeError, not SlicingError.
-class InfillFailedException : public Slic3r::RuntimeError {
+class InfillFailedException : public RuntimeError {
 public:
-    InfillFailedException() : Slic3r::RuntimeError("Infill failed") {}
+    InfillFailedException() : RuntimeError("Infill failed") {}
 };
 
 struct LockRegionParam

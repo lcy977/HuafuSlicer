@@ -32,6 +32,8 @@
 #include <boost/container/deque.hpp>
 #endif // _WIN32
 
+#include <boost/intrusive/detail/value_functors.hpp> // global scope before namespace Slic3r (MSVC + Boost.Container)
+
 #include "Technologies.hpp"
 #include "Semver.hpp"
 

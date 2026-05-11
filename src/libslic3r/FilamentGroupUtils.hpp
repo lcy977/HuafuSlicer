@@ -1,10 +1,13 @@
 #ifndef FILAMENT_GROUP_UTILS_HPP
 #define FILAMENT_GROUP_UTILS_HPP
 
-#include <vector>
-#include <map>
-#include <string>
+#include <chrono>
 #include <exception>
+#include <functional>
+#include <map>
+#include <queue>
+#include <string>
+#include <vector>
 
 #include "PrintConfig.hpp"
 
@@ -39,6 +42,42 @@ namespace Slic3r
             bool operator<(const MachineFilamentInfo& other) const;
         };
 
+        struct FlushTimeMachine
+        {
+        private:
+            std::chrono::high_resolution_clock::time_point start;
+
+        public:
+            void time_machine_start()
+            {
+                start = std::chrono::high_resolution_clock::now();
+            }
+
+            int time_machine_end()
+            {
+                auto end = std::chrono::high_resolution_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+                return duration.count();
+            }
+        };
+
+        struct MemoryedGroup {
+            MemoryedGroup() = default;
+            MemoryedGroup(const std::vector<int>& group_, const int cost_, const int prefer_level_)
+                : group(group_), cost(cost_), prefer_level(prefer_level_) {}
+            bool operator>(const MemoryedGroup& other) const
+            {
+                return prefer_level < other.prefer_level || (prefer_level == other.prefer_level && cost > other.cost);
+            }
+
+            int cost{ 0 };
+            int prefer_level{ 0 };
+            std::vector<int> group;
+        };
+
+        using MemoryedGroupHeap = std::priority_queue<MemoryedGroup, std::vector<MemoryedGroup>, std::greater<MemoryedGroup>>;
+
+        void update_memoryed_groups(const MemoryedGroup& item, const double gap_threshold, MemoryedGroupHeap& groups);
 
         class FilamentGroupException: public std::exception {
         public:

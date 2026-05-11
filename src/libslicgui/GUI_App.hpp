@@ -1,3 +1,6 @@
+#ifndef slic3r_GUI_App_hpp_
+#define slic3r_GUI_App_hpp_
+
 #include<QWidget>
 #include<QObject>
 #include"libslic3r/AppConfig.hpp"
@@ -16,3 +19,5 @@ public:
 private:
     Slic3r::AppConfig* app_config=nullptr;
 };
+
+#endif /* slic3r_GUI_App_hpp_ */

@@ -1,74 +1,103 @@
-#pragma once
+#ifndef slic3r_Plater_hpp_
+#define slic3r_Plater_hpp_
 
-#include "Slic3rDocument.hpp"
+#include <memory>
+#include <string>
+#include <vector>
+
+#include <boost/filesystem/path.hpp>
 
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <atomic>
-#include <memory>
-#include <vector>
+#include <QVector>
 
-#include "libslic3r/Format/bbs_3mf.hpp" // LoadStrategy
+#include "libslic3r/Format/bbs_3mf.hpp"
+#include "libslic3r/Model.hpp"
 
-class QThread;
+namespace Slic3r {
 
-/**
- * Qt 侧 Plater：负责与 libslic3r 对接的
- *  - 模型导入（stl/obj/3mf 等，走 Model::read_from_file）
- *  - 文档存储（Slic3r::Slic3rDocument：Model + DynamicPrintConfig）
- *  - 切片与 G-code 导出（Slic3r::Print::apply / process / export_gcode）
- *
- * 不依赖 wxWidgets；可在 QML 或 Qt Widgets 中持有单例或业务层对象使用。
- */
-class Plater : public QObject
-{
+class AppConfig;
+
+namespace UndoRedo {
+enum class SnapshotType : unsigned char {
+    Invalid = 0,
+    Normal,
+    ProjectSeparator,
+};
+}
+
+namespace GUI {
+
+/// Qt 侧入口：持有 libslic3r::Model，负责文件对话框与导入管线（对齐 Slic3r/Orca 的 Plater 职责，UI 全部使用 Qt）。
+class Plater : public QObject {
     Q_OBJECT
-
 public:
     explicit Plater(QObject* parent = nullptr);
     ~Plater() override;
 
-    /// 从单文件加载；成功则替换当前 document 中的 model；3mf 可能同时更新 print_config。
-    bool loadFile(const QString& filePath);
+    void set_app_config(AppConfig* config);
+    AppConfig* app_config() const { return m_app_config; }
 
-    /// 顺序加载多个文件；返回成功加载的文件数。
-    int loadFiles(const QStringList& filePaths, Slic3r::LoadStrategy strategy = Slic3r::LoadStrategy::LoadModel);
+    /// 通过 QFileDialog 选择模型文件并导入。
+    void add_file();
 
-    void clear();
+    std::vector<size_t> load_files(const std::vector<boost::filesystem::path>& input_files,
+        LoadStrategy strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig,
+        bool ask_multi = false);
+    std::vector<size_t> load_files(const std::vector<std::string>& input_files,
+        LoadStrategy strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig,
+        bool ask_multi = false);
+    bool load_files(const QStringList& filenames);
 
-    Slic3r::Model& model();
-    const Slic3r::Model& model() const;
+    bool open_3mf_file(const boost::filesystem::path& file_path);
+    static int get_3mf_file_count(const std::vector<boost::filesystem::path>& paths);
 
-    Slic3r::DynamicPrintConfig& printConfig();
-    const Slic3r::DynamicPrintConfig& printConfig() const;
+    const Model& model() const;
+    Model& model();
 
-    Slic3r::Slic3rDocument& document();
-    const Slic3r::Slic3rDocument& document() const;
+    /// 加载工程（当前实现：等同按路径调用 load_files；后续可接预设保存确认、最近文件等）。
+    void load_project(const std::string& filename = "", const std::string& originfile = "-");
 
-    void resetPrintConfigToFactoryDefaults();
+    QString project_name() const { return m_project_name; }
+    void set_project_name(const QString& name);
 
-    /// 同步：切片并写出 G-code。outputPathTemplate 与 Slic3r::Print::export_gcode 规则一致（可为带占位符的模板路径）。
-    bool sliceToGcode(
-        const QString& outputPathTemplate,
-        QString*      outGeneratedPath = nullptr,
-        QString*      outError         = nullptr);
+    /// 预留与 Orca 一致的快照 RAII；Undo/Redo 栈接入前为空操作。
+    class TakeSnapshot {
+    public:
+        TakeSnapshot(Plater* plater, const std::string& snapshot_name);
+        TakeSnapshot(Plater* plater, const std::string& snapshot_name, UndoRedo::SnapshotType snapshot_type);
+        ~TakeSnapshot();
 
-    /// 在后台线程中执行 sliceToGcode；通过 signal 返回结果。若已有任务在进行会失败。
-    bool requestSliceAsync(const QString& outputPathTemplate, QString* outError = nullptr);
-
-    bool isSlicing() const { return m_slicing.load(std::memory_order_acquire); }
+    private:
+        Plater* m_plater;
+    };
 
 signals:
-    void modelChanged();
-    void importFinished(const QString& path, int objectCount);
-    void importFailed(const QString& path, const QString& error);
-    void sliceProgress(int percent, const QString& message);
-    void sliceFinished(const QString& gcodePath);
-    void sliceFailed(const QString& error);
+    /// 导入完成后发出（索引为 model().objects 下标）。
+    void objects_imported(const QVector<quint64>& object_indices);
+    void project_metadata_changed();
 
 private:
-    struct Impl;
-    std::unique_ptr<Impl>   m_impl;
-    std::atomic<bool>       m_slicing{false};
+    friend class TakeSnapshot;
+
+    void take_snapshot(const std::string& name, UndoRedo::SnapshotType type = UndoRedo::SnapshotType::Normal);
+    void suppress_snapshots();
+    void allow_snapshots();
+
+    struct priv;
+    std::unique_ptr<priv> p;
+
+    QString m_project_name;
+    std::string m_3mf_path;
+    AppConfig* m_app_config{ nullptr };
+
+    bool m_loading_project{ false };
+
+    int m_snapshot_suppress_depth{ 0 };
 };
+
+} // namespace GUI
+} // namespace Slic3r
+
+#endif
