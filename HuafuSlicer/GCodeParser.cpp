@@ -9,6 +9,16 @@
 
 namespace GCodeParser {
 
+/** 全角分号/冒号、BOM 等会导致「行尾 feature」整段被忽略 */
+static QString normalizeLineSeparators(QString s)
+{
+    if (!s.isEmpty() && s.at(0) == QChar(0xFEFF))
+        s.remove(0, 1);
+    s.replace(QChar(0xFF1B), QLatin1Char(';')); // ；
+    s.replace(QChar(0xFF1A), QLatin1Char(':')); // ：
+    return s;
+}
+
 static float parseAxisValue(const QString &line, QChar axis, bool *has)
 {
     *has = false;
@@ -35,43 +45,157 @@ static float parseAxisValue(const QString &line, QChar axis, bool *has)
     return v;
 }
 
-static MoveKind kindFromCuraType(const QString &upper)
+/** 统一特征名：大小写、空格/下划线 → 连字符，便于匹配 Bambu「Outer wall」等 */
+static QString normalizedFeatureName(QString raw)
 {
-    if (upper.contains(QLatin1String("WALL-OUTER")) || upper.contains(QLatin1String("OUTER-WALL")))
-        return MoveKind::ExtrudeOuterWall;
-    if (upper.contains(QLatin1String("WALL-INNER")) || upper.contains(QLatin1String("INNER-WALL")))
+    QString s = raw.toUpper();
+    s.replace(QLatin1Char(' '), QLatin1Char('-'));
+    s.replace(QLatin1Char('_'), QLatin1Char('-'));
+    return s;
+}
+
+static MoveKind kindFromCuraType(const QString &raw)
+{
+    const QString t = raw.trimmed();
+    // 部分切片在 TYPE/FEATURE 的值或备注里直接写中文（与参考图一致）
+    if (t.contains(QStringLiteral("界面支撑")) || t.contains(QStringLiteral("支撑界面"))
+        || t.contains(QStringLiteral("接触面支撑")))
+        return MoveKind::ExtrudeSupportInterface;
+    if (t.contains(QStringLiteral("实心")) && (t.contains(QStringLiteral("填充")) || t.contains(QStringLiteral("填"))))
+        return MoveKind::ExtrudeInfillSolid;
+    if (t.contains(QStringLiteral("稀疏")) && (t.contains(QStringLiteral("填充")) || t.contains(QStringLiteral("填"))))
+        return MoveKind::ExtrudeInfillSparse;
+    if (t.contains(QStringLiteral("内壁")) || t.contains(QStringLiteral("内墙")))
         return MoveKind::ExtrudeInnerWall;
-    if (upper.contains(QLatin1String("SKIN")) || upper.contains(QLatin1String("TOP/BOTTOM")))
+    if (t.contains(QStringLiteral("外壁")) || t.contains(QStringLiteral("外墙")))
+        return MoveKind::ExtrudeOuterWall;
+    if (t.contains(QStringLiteral("表皮")) || t.contains(QStringLiteral("顶底")))
         return MoveKind::ExtrudeSkin;
-    if (upper.contains(QLatin1String("FILL")) || upper.contains(QLatin1String("INFILL")))
-        return MoveKind::ExtrudeInfill;
-    if (upper.contains(QLatin1String("SUPPORT")))
+    if (t.contains(QStringLiteral("裙边")) || t.contains(QStringLiteral("触边"))
+        || t.contains(QLatin1String("brim"), Qt::CaseInsensitive)
+        || t.contains(QLatin1String("skirt"), Qt::CaseInsensitive))
+        return MoveKind::ExtrudeSkirtBrim;
+    if (t.contains(QStringLiteral("支撑")))
         return MoveKind::ExtrudeSupport;
-    if (upper.contains(QLatin1String("FIBER")))
+    if (t.contains(QStringLiteral("纤维")))
+        return MoveKind::ExtrudeFiber;
+    if (t.contains(QStringLiteral("填充")))
+        return MoveKind::ExtrudeInfill;
+
+    const QString u = normalizedFeatureName(raw);
+
+    // 裙边/边缘（勿放在含 SKIN 的判定之后，以免误伤）
+    if (u.contains(QLatin1String("SKIRT")) || u.contains(QLatin1String("BRIM"))
+        || u.contains(QLatin1String("PRIME-TOWER")) || u.contains(QLatin1String("PRIMETOWER")))
+        return MoveKind::ExtrudeSkirtBrim;
+
+    // 内壁：先判，避免与「OUTER…」类字符串交叉误判
+    if (u.contains(QLatin1String("WALL-INNER")) || u.contains(QLatin1String("INNER-WALL"))
+        || u.contains(QLatin1String("INNERWALL"))
+        || (u.contains(QLatin1String("INNER")) && u.contains(QLatin1String("WALL"))
+            && !u.contains(QLatin1String("OUTER")))
+        || (u.contains(QLatin1String("INNER")) && u.contains(QLatin1String("PERIMETER")))
+        || u.contains(QLatin1String("INTERNAL-PERIMETER")) || u.contains(QLatin1String("INTERNALPERIMETER")))
+        return MoveKind::ExtrudeInnerWall;
+
+    if (u.contains(QLatin1String("WALL-OUTER")) || u.contains(QLatin1String("OUTER-WALL"))
+        || u.contains(QLatin1String("OUTERWALL"))
+        || (u.contains(QLatin1String("OUTER")) && u.contains(QLatin1String("WALL")))
+        || u.contains(QLatin1String("EXTERNAL-PERIMETER")) || u.contains(QLatin1String("EXTERNALPERIMETER")))
+        return MoveKind::ExtrudeOuterWall;
+
+    // PrusaSlicer 等单独使用「Perimeter」表示外圈
+    if (u.contains(QLatin1String("PERIMETER")) && !u.contains(QLatin1String("INTERNAL"))
+        && !(u.contains(QLatin1String("INNER")) && u.contains(QLatin1String("PERIMETER"))))
+        return MoveKind::ExtrudeOuterWall;
+
+    if (u.contains(QLatin1String("SKIN")) || u.contains(QLatin1String("TOP/BOTTOM"))
+        || u.contains(QLatin1String("IRONING")))
+        return MoveKind::ExtrudeSkin;
+
+    // 实心 / 稀疏填充（先于泛型 FILL/INFILL）
+    if ((u.contains(QLatin1String("SOLID"))
+         && (u.contains(QLatin1String("INFILL")) || u.contains(QLatin1String("FILL"))))
+        || u.contains(QLatin1String("INTERNAL-SOLID-INFILL"))
+        || u.contains(QLatin1String("INTERNALSOLIDINFILL")))
+        return MoveKind::ExtrudeInfillSolid;
+    if ((u.contains(QLatin1String("SPARSE")) && u.contains(QLatin1String("INFILL")))
+        || u.contains(QLatin1String("SPARSE-INFILL")) || u.contains(QLatin1String("SPARSEINFILL")))
+        return MoveKind::ExtrudeInfillSparse;
+
+    if (u.contains(QLatin1String("FILL")) || u.contains(QLatin1String("INFILL")))
+        return MoveKind::ExtrudeInfill;
+
+    // 界面支撑须先于普通 SUPPORT
+    if ((u.contains(QLatin1String("INTERFACE")) && u.contains(QLatin1String("SUPPORT")))
+        || u.contains(QLatin1String("SUPPORT-INTERFACE")) || u.contains(QLatin1String("SUPPORTINTERFACE"))
+        || u.contains(QLatin1String("INTERFACE-SUPPORT")) || u.contains(QLatin1String("INTERFACESUPPORT")))
+        return MoveKind::ExtrudeSupportInterface;
+    if (u.contains(QLatin1String("SUPPORT")))
+        return MoveKind::ExtrudeSupport;
+    if (u.contains(QLatin1String("FIBER")))
         return MoveKind::ExtrudeFiber;
     return MoveKind::ExtrudeOther;
 }
 
+/** 行尾/多段注释里的 TYPE、FEATURE 等（不要求 key 在分块开头） */
+static void applyFeatureHintsFromCommentSuffix(const QString &suffixIn, MoveKind &curExtrudeKind)
+{
+    if (suffixIn.isEmpty())
+        return;
+    QString suffix = normalizeLineSeparators(suffixIn);
+    const QString su = suffix.toUpper();
+    static const QLatin1String kTags[] = {
+        QLatin1String("TYPE:"),
+        QLatin1String("FEATURE:"),
+        QLatin1String("PRINTING_FEATURE:"),
+        QLatin1String("LAYER_TYPE:"),
+    };
+    for (const QLatin1String &tag : kTags) {
+        int from = 0;
+        while (true) {
+            const int p = su.indexOf(tag, from);
+            if (p < 0)
+                break;
+            const int valStart = p + tag.size();
+            int end = suffix.indexOf(QLatin1Char(';'), valStart);
+            if (end < 0)
+                end = suffix.size();
+            QString val = suffix.mid(valStart, end - valStart).trimmed();
+            if (!val.isEmpty())
+                curExtrudeKind = kindFromCuraType(val);
+            from = valStart + 1;
+        }
+    }
+}
+
 QColor colorForKind(MoveKind k)
 {
+    // 与 PreviewSimulation.qml「特征颜色」图例一致（轨迹顶点色）
     switch (k) {
     case MoveKind::Travel:
-        return QColor(255, 255, 255);
+        return QColor(QStringLiteral("#ffffff"));
     case MoveKind::ExtrudeOuterWall:
-        return QColor(30, 110, 255);
+        return QColor(QStringLiteral("#1e6eff"));
     case MoveKind::ExtrudeInnerWall:
-        return QColor(50, 200, 90);
+        return QColor(QStringLiteral("#32c85a"));
     case MoveKind::ExtrudeInfill:
-        return QColor(255, 150, 60);
+    case MoveKind::ExtrudeInfillSolid:
+    case MoveKind::ExtrudeInfillSparse:
+        return QColor(QStringLiteral("#ff963c"));
     case MoveKind::ExtrudeSkin:
-        return QColor(255, 210, 80);
+        return QColor(QStringLiteral("#ffd250"));
     case MoveKind::ExtrudeSupport:
-        return QColor(130, 135, 140);
+        return QColor(QStringLiteral("#82878c"));
+    case MoveKind::ExtrudeSupportInterface:
+        return QColor(QStringLiteral("#22d3ee"));
+    case MoveKind::ExtrudeSkirtBrim:
+        return QColor(QStringLiteral("#38bdf8"));
     case MoveKind::ExtrudeFiber:
-        return QColor(40, 40, 48);
+        return QColor(QStringLiteral("#6a6a72"));
     case MoveKind::ExtrudeOther:
     default:
-        return QColor(255, 120, 90);
+        return QColor(QStringLiteral("#ff785a"));
     }
 }
 
@@ -87,10 +211,7 @@ ParseResult parseFile(const QString &filePath, int maxSegments, const ProgressCa
     {
         const QByteArray all = f.readAll();
         f.seek(0);
-        constexpr int kMaxPreviewChars = 4'000'000;
         QString raw = QString::fromUtf8(all);
-        if (raw.size() > kMaxPreviewChars)
-            raw = raw.left(kMaxPreviewChars) + QStringLiteral("\n; … (预览已截断)\n");
         out.rawText = std::move(raw);
     }
 
@@ -121,22 +242,21 @@ ParseResult parseFile(const QString &filePath, int maxSegments, const ProgressCa
         progress(0, totalLines + 1);
 
     for (int lineNo = 0; lineNo < out.sourceLines.size(); ++lineNo) {
-        QString line = out.sourceLines[lineNo].trimmed();
+        QString line = normalizeLineSeparators(out.sourceLines[lineNo].trimmed());
         if (line.isEmpty())
             continue;
 
         if (line.startsWith(QLatin1Char(';'))) {
-            const QString cmt = line.mid(1).trimmed().toUpper();
-            if (cmt.startsWith(QLatin1String("TYPE:"))) {
-                const QString t = cmt.mid(5).trimmed();
-                curExtrudeKind = kindFromCuraType(t);
-            }
+            const QString cmt = line.mid(1).trimmed();
+            applyFeatureHintsFromCommentSuffix(cmt, curExtrudeKind);
             continue;
         }
 
         const int semi = line.indexOf(QLatin1Char(';'));
-        if (semi >= 0)
+        if (semi >= 0) {
+            applyFeatureHintsFromCommentSuffix(line.mid(semi + 1), curExtrudeKind);
             line = line.left(semi).trimmed();
+        }
         if (line.isEmpty())
             continue;
 
@@ -225,7 +345,8 @@ ParseResult parseFile(const QString &filePath, int maxSegments, const ProgressCa
                 kind = MoveKind::Travel;
         }
 
-        if (movedXY || hz) {
+        // 含仅 E 挤出（无 XY/Z 位移）的段，否则统计/颜色会漏掉螺旋等模式
+        if (movedXY || hz || (isG1 && dE > 0.0005f)) {
             if (out.segments.size() >= maxSegments) {
                 out.errorMessage = QStringLiteral("轨迹段过多，已截断显示");
                 break;

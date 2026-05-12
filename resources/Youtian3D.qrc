@@ -1,0 +1,25 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <!-- 与 QML / C++ 中 qrc:/huafuslicer/resources/… 一致（勿再用 /youtian3d 前缀） -->
+    <!-- 换图：把 png/svg 放在与本 qrc 同级的 resources/ 目录，更新 alias 右侧文件名 -->
+    <qresource prefix="/huafuslicer">
+        <file alias="resources/import_model.png">import_model.png</file>
+        <file alias="resources/ic_import_gcode.svg">ic_import_gcode.svg</file>
+        <file alias="resources/gcode.png">gcode.png</file>
+        <file alias="resources/arrange_model.png">arrange_model.png</file>
+        <file alias="resources/rotate_model.png">rotate_model.png</file>
+        <!-- 以下为占位：请替换为仓库内真实 png；此前指向 D:/ 会导致任意机器加载失败 -->
+        <file alias="resources/list.png">import_model.png</file>
+        <file alias="resources/reset_view.png">rotate_model.png</file>
+        <file alias="resources/ic_scale.png">arrange_model.png</file>
+        <file alias="resources/viewport_bg.png">viewport_bg.png</file>
+        <file alias="resources/ic_profile_save.png">ic_profile_save.png</file>
+        <file alias="resources/ic_profile_edit.png">ic_profile_edit.png</file>
+        <file alias="resources/ic_profile_delete.png">ic_profile_delete.png</file>
+        <file alias="resources/ic_print_layer_height.png">ic_print_layer_height.png</file>
+        <file alias="resources/ic_print_wall.png">ic_print_wall.png</file>
+        <file alias="resources/ic_print_top_bottom.png">ic_print_top_bottom.png</file>
+        <file alias="resources/ic_print_infill.png">ic_print_infill.png</file>
+        <file alias="resources/ic_print_other.png">ic_print_other.png</file>
+    </qresource>
+</RCC>

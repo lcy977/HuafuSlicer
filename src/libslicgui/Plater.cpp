@@ -168,6 +168,8 @@ Plater::~Plater() = default;
 
 void Plater::set_app_config(AppConfig* config) { m_app_config = config; }
 
+void Plater::set_preset_bundle(PresetBundle* bundle) { m_preset_bundle = bundle; }
+
 void Plater::take_snapshot(const std::string& /*name*/, UndoRedo::SnapshotType /*type*/) {}
 
 void Plater::suppress_snapshots() { ++m_snapshot_suppress_depth; }

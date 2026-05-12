@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
-import Youtian3D
+import HuafuSlicer 1.0
 
 /**
  * 轨迹仿真：参考切片软件「预览」布局 — 中央 OpenGL、左右侧信息面板、底部分播放条 + 细进度条。
@@ -32,13 +32,19 @@ Item {
     }
 
     function syncGcodeViewToPlaybackLine() {
-        const line = viewport.playbackLine
-        if (line < 1 || !viewport.sourceLineCount)
+        if (!viewport.sourceLineCount || !viewport.playbackGcodeWindowText)
             return
-        const t = gcodeArea.text
+
+        const line = Math.max(viewport.playbackGcodeWindowStartLine,
+                              Math.min(viewport.playbackGcodeWindowEndLine, viewport.playbackLine || 1))
+        const relativeLine = line - viewport.playbackGcodeWindowStartLine
+        if (relativeLine < 0)
+            return
+
+        const t = viewport.playbackGcodeWindowText
         let pos = 0
-        let lineNum = 1
-        while (lineNum < line && pos < t.length) {
+        let lineNum = 0
+        while (lineNum < relativeLine && pos < t.length) {
             const n = t.indexOf("\n", pos)
             if (n < 0)
                 return
@@ -48,10 +54,9 @@ Item {
         let endPos = t.indexOf("\n", pos)
         if (endPos < 0)
             endPos = t.length
-        gcodeArea.select(pos, endPos)
         gcodeArea.cursorPosition = pos
-        const ratio = (line - 1) / Math.max(1, viewport.sourceLineCount)
-        gcodeScroll.ScrollBar.vertical.position = Math.min(1, Math.max(0, ratio - 0.12))
+        gcodeArea.select(pos, endPos)
+        gcodeScroll.ensureVisible(gcodeArea, 8, 100)
     }
 
     // 穿透到 OpenGL：空白区域旋转/缩放
@@ -76,6 +81,14 @@ Item {
             qsTr("所有文件") + " (*)"
         ]
         onAccepted: viewport.loadGcode(selectedFile)
+    }
+
+    Timer {
+        id: gcodeFollowTimer
+        interval: 90
+        repeat: true
+        running: playTimer.running && previewRoot.gcodeSidePanelOpen && viewport.pathLoaded
+        onTriggered: previewRoot.syncGcodeViewToPlaybackLine()
     }
 
     Timer {
@@ -204,9 +217,12 @@ Item {
                         { n: qsTr("空走"), c: "#ffffff" },
                         { n: qsTr("外壁"), c: "#1e6eff" },
                         { n: qsTr("内壁"), c: "#32c85a" },
-                        { n: qsTr("填充"), c: "#ff963c" },
+                        { n: qsTr("塑料实心填充"), c: "#ff963c" },
+                        { n: qsTr("塑料稀疏填充"), c: "#ff963c" },
                         { n: qsTr("表皮/顶底"), c: "#ffd250" },
                         { n: qsTr("支撑"), c: "#82878c" },
+                        { n: qsTr("界面支撑"), c: "#22d3ee" },
+                        { n: qsTr("裙边/边缘"), c: "#38bdf8" },
                         { n: qsTr("纤维"), c: "#6a6a72" },
                         { n: qsTr("其他挤出"), c: "#ff785a" }
                     ]
@@ -316,6 +332,75 @@ Item {
                 }
 
                 Label {
+                    visible: viewport.pathLoaded && viewport.trajectoryFeatureStats.length > 0
+                    text: qsTr("打印耗时（按进给推算）")
+                    font.bold: true
+                    font.pixelSize: 13
+                    color: textPrimary
+                    Layout.topMargin: 8
+                }
+
+                ColumnLayout {
+                    visible: viewport.pathLoaded && viewport.trajectoryFeatureStats.length > 0
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Repeater {
+                        model: viewport.trajectoryFeatureStats.length
+
+                        delegate: ColumnLayout {
+                            readonly property var row: viewport.trajectoryFeatureStats[index]
+                            spacing: 4
+                            Layout.fillWidth: true
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Rectangle {
+                                    width: 10
+                                    height: 10
+                                    radius: 5
+                                    color: row ? row.color : "#888"
+                                    border.width: 1
+                                    border.color: Qt.rgba(1, 1, 1, 0.2)
+                                }
+                                Label {
+                                    text: row ? row.label : ""
+                                    color: textPrimary
+                                    font.pixelSize: 12
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                }
+                                Label {
+                                    text: (row && row.timeMin !== undefined ? row.timeMin.toFixed(1) : "0")
+                                          + qsTr(" 分钟") + "  (" + (row && row.percent !== undefined
+                                                                      ? row.percent.toFixed(1)
+                                                                      : "0") + "%)"
+                                    color: textMuted
+                                    font.pixelSize: 11
+                                    horizontalAlignment: Text.AlignRight
+                                }
+                            }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 6
+                                radius: 3
+                                color: Qt.rgba(1, 1, 1, 0.08)
+                                Rectangle {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.bottom: parent.bottom
+                                    width: Math.max(0, parent.width * (row && row.ratio !== undefined ? row.ratio : 0))
+                                    radius: 3
+                                    color: row ? row.color : "#888"
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Label {
                     text: qsTr("当前行 %1").arg(viewport.playbackLine)
                     color: accentOrange
                     font.pixelSize: 12
@@ -377,36 +462,6 @@ Item {
         }
     }
 
-    ToolButton {
-        id: gcodePanelToggle
-        z: 5
-        visible: !gcodeSidePanelOpen
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.rightMargin: 14
-        implicitWidth: 36
-        implicitHeight: 72
-        text: "‹"
-        font.pixelSize: 18
-        ToolTip.visible: hovered
-        ToolTip.delay: 400
-        ToolTip.text: qsTr("显示 G-code 侧栏")
-        onClicked: gcodeSidePanelOpen = true
-        background: Rectangle {
-            radius: 8
-            color: parent.hovered ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0.06, 0.07, 0.10, 0.88)
-            border.width: 1
-            border.color: glassBorder
-        }
-        contentItem: Label {
-            text: parent.text
-            font: parent.font
-            color: textPrimary
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-        }
-    }
-
     // ----- 右侧：G-code 面板 -----
     Item {
         id: rightGlass
@@ -446,34 +501,15 @@ Item {
                 }
                 Label {
                     text: viewport.sourceLineCount
-                          ? (qsTr("行 %1 / %2").arg(viewport.playbackLine).arg(viewport.sourceLineCount))
+                          ? (qsTr("行 %1 / %2   显示 %3-%4")
+                             .arg(viewport.playbackLine)
+                             .arg(viewport.sourceLineCount)
+                             .arg(viewport.playbackGcodeWindowStartLine)
+                             .arg(viewport.playbackGcodeWindowEndLine))
                           : ""
                     color: textMuted
                     font.pixelSize: 11
                     font.family: "Consolas, monospace"
-                }
-                ToolButton {
-                    implicitWidth: 30
-                    implicitHeight: 26
-                    text: "⟩"
-                    font.pixelSize: 14
-                    focusPolicy: Qt.NoFocus
-                    visible: gcodeSidePanelOpen
-                    ToolTip.visible: hovered
-                    ToolTip.delay: 400
-                    ToolTip.text: qsTr("隐藏 G-code 侧栏")
-                    onClicked: gcodeSidePanelOpen = false
-                    background: Rectangle {
-                        radius: 6
-                        color: parent.hovered ? Qt.rgba(1, 1, 1, 0.1) : "transparent"
-                    }
-                    contentItem: Label {
-                        text: parent.text
-                        font: parent.font
-                        color: textPrimary
-                        horizontalAlignment: Text.AlignHCenter
-                        verticalAlignment: Text.AlignVCenter
-                    }
                 }
             }
 
@@ -499,7 +535,7 @@ Item {
                         border.width: 1
                         border.color: Qt.rgba(1, 1, 1, 0.05)
                     }
-                    text: viewport.gcodeText
+                    text: viewport.playbackGcodeWindowText
                 }
             }
 
@@ -518,7 +554,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 108
+        height: 92
         z: 6
 
         // 中间悬浮播放控制（药丸条）
@@ -537,15 +573,31 @@ Item {
             RowLayout {
                 id: playRow
                 anchors.centerIn: parent
-                spacing: 4
+                spacing: 6
 
                 ToolButton {
                     text: "⏮"
-                    font.pixelSize: 14
+                    implicitWidth: 34
+                    implicitHeight: 34
+                    padding: 0
+                    font.pixelSize: 13
                     onClicked: {
                         playTimer.running = false
                         previewRoot.simElapsedWallSec = 0
                         viewport.progress = 0
+                    }
+                    background: Rectangle {
+                        radius: width * 0.5
+                        color: parent.down ? Qt.rgba(1, 1, 1, 0.2) : (parent.hovered ? Qt.rgba(1, 1, 1, 0.14) : "transparent")
+                        border.width: 1
+                        border.color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(1, 1, 1, 0.1)
+                    }
+                    contentItem: Label {
+                        text: parent.text
+                        color: textPrimary
+                        font: parent.font
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
                     }
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("回到起点")
@@ -553,6 +605,9 @@ Item {
                 }
                 ToolButton {
                     text: "‹"
+                    implicitWidth: 34
+                    implicitHeight: 34
+                    padding: 0
                     font.pixelSize: 18
                     font.bold: true
                     onClicked: {
@@ -561,12 +616,28 @@ Item {
                         viewport.progress = viewport.progressAtCompletedSegmentCount(Math.max(0, k - 1))
                         previewRoot.syncSimElapsedFromProgress()
                     }
+                    background: Rectangle {
+                        radius: width * 0.5
+                        color: parent.down ? Qt.rgba(1, 1, 1, 0.2) : (parent.hovered ? Qt.rgba(1, 1, 1, 0.14) : "transparent")
+                        border.width: 1
+                        border.color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(1, 1, 1, 0.1)
+                    }
+                    contentItem: Label {
+                        text: parent.text
+                        color: textPrimary
+                        font: parent.font
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("上一段")
                     ToolTip.delay: 400
                 }
                 ToolButton {
                     text: playTimer.running ? "⏸" : "▶"
+                    implicitWidth: 38
+                    implicitHeight: 38
+                    padding: 0
                     font.pixelSize: 16
                     font.bold: true
                     onClicked: {
@@ -580,12 +651,28 @@ Item {
                         if (playTimer.running && willStart)
                             previewRoot.simElapsedWallSec = viewport.progress * viewport.trajectoryDurationSec
                     }
+                    background: Rectangle {
+                        radius: width * 0.5
+                        color: parent.down ? Qt.darker(accentOrange, 1.2) : (parent.hovered ? Qt.lighter(accentOrange, 1.08) : accentOrange)
+                        border.width: 1
+                        border.color: Qt.rgba(0, 0, 0, 0.25)
+                    }
+                    contentItem: Label {
+                        text: parent.text
+                        color: "#171717"
+                        font: parent.font
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     ToolTip.visible: hovered
                     ToolTip.text: playTimer.running ? qsTr("暂停") : qsTr("播放")
                     ToolTip.delay: 400
                 }
                 ToolButton {
                     text: "›"
+                    implicitWidth: 34
+                    implicitHeight: 34
+                    padding: 0
                     font.pixelSize: 18
                     font.bold: true
                     onClicked: {
@@ -595,17 +682,46 @@ Item {
                         viewport.progress = viewport.progressAtCompletedSegmentCount(Math.min(n, k + 1))
                         previewRoot.syncSimElapsedFromProgress()
                     }
+                    background: Rectangle {
+                        radius: width * 0.5
+                        color: parent.down ? Qt.rgba(1, 1, 1, 0.2) : (parent.hovered ? Qt.rgba(1, 1, 1, 0.14) : "transparent")
+                        border.width: 1
+                        border.color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(1, 1, 1, 0.1)
+                    }
+                    contentItem: Label {
+                        text: parent.text
+                        color: textPrimary
+                        font: parent.font
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("下一段")
                     ToolTip.delay: 400
                 }
                 ToolButton {
                     text: "⏭"
-                    font.pixelSize: 14
+                    implicitWidth: 34
+                    implicitHeight: 34
+                    padding: 0
+                    font.pixelSize: 13
                     onClicked: {
                         playTimer.running = false
                         viewport.progress = 1
                         previewRoot.syncSimElapsedFromProgress()
+                    }
+                    background: Rectangle {
+                        radius: width * 0.5
+                        color: parent.down ? Qt.rgba(1, 1, 1, 0.2) : (parent.hovered ? Qt.rgba(1, 1, 1, 0.14) : "transparent")
+                        border.width: 1
+                        border.color: parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(1, 1, 1, 0.1)
+                    }
+                    contentItem: Label {
+                        text: parent.text
+                        color: textPrimary
+                        font: parent.font
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
                     }
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("到终点")
@@ -613,9 +729,28 @@ Item {
                 }
                 ToolButton {
                     text: "🔁"
-                    font.pixelSize: 14
+                    implicitWidth: 34
+                    implicitHeight: 34
+                    padding: 0
+                    font.pixelSize: 13
                     checked: previewRoot.loopPlayback
                     onClicked: previewRoot.loopPlayback = !previewRoot.loopPlayback
+                    background: Rectangle {
+                        radius: width * 0.5
+                        color: parent.checked ? Qt.rgba(1, 0.6, 0.24, 0.28)
+                                              : (parent.down ? Qt.rgba(1, 1, 1, 0.2)
+                                                             : (parent.hovered ? Qt.rgba(1, 1, 1, 0.14) : "transparent"))
+                        border.width: 1
+                        border.color: parent.checked ? Qt.rgba(1, 0.65, 0.35, 0.8)
+                                                     : (parent.hovered ? Qt.rgba(1, 1, 1, 0.25) : Qt.rgba(1, 1, 1, 0.1))
+                    }
+                    contentItem: Label {
+                        text: parent.text
+                        color: parent.checked ? accentOrange : textPrimary
+                        font: parent.font
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("循环播放")
                     ToolTip.delay: 400
@@ -632,8 +767,15 @@ Item {
                     id: speedBox
                     implicitWidth: 76
                     implicitHeight: 32
+                    font.pixelSize: 12
                     model: [qsTr("0.5×"), qsTr("1.0×"), qsTr("2.0×"), qsTr("4.0×")]
                     currentIndex: 1
+                    background: Rectangle {
+                        radius: 8
+                        color: Qt.rgba(1, 1, 1, 0.08)
+                        border.width: 1
+                        border.color: Qt.rgba(1, 1, 1, 0.15)
+                    }
                     ToolTip.visible: hovered
                     ToolTip.delay: 400
                     ToolTip.text: qsTr("相对真实进给的播放速度")
@@ -671,13 +813,11 @@ Item {
         // 底边细进度条（红线）
         Rectangle {
             id: progressRail
-            anchors.left: parent.left
-            anchors.right: parent.right
+            width: Math.min(parent.width - 32, Math.max(420, parent.width * 0.5))
+            anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
-            anchors.leftMargin: 16
-            anchors.rightMargin: 16
-            anchors.bottomMargin: 14
-            height: 36
+            anchors.bottomMargin: 10
+            height: 30
             radius: 6
             color: Qt.rgba(0.05, 0.06, 0.08, 0.75)
             border.width: 1
@@ -702,11 +842,23 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                     from: 0
                     to: 1
+                    live: true
+                    wheelEnabled: false
+                    stepSize: 0
+                    snapMode: Slider.NoSnap
                     padding: 0
                     topPadding: 0
                     bottomPadding: 0
+                    implicitHeight: 28
                     value: viewport.progress
                     onMoved: {
+                        viewport.progress = value
+                        playTimer.running = false
+                        previewRoot.syncSimElapsedFromProgress()
+                    }
+                    onValueChanged: {
+                        if (!pressed)
+                            return
                         viewport.progress = value
                         playTimer.running = false
                         previewRoot.syncSimElapsedFromProgress()
@@ -730,9 +882,9 @@ Item {
                     handle: Rectangle {
                         x: lineProgSlider.leftPadding + lineProgSlider.visualPosition * (lineProgSlider.availableWidth - width)
                         y: lineProgSlider.topPadding + lineProgSlider.availableHeight / 2 - height / 2
-                        width: 12
-                        height: 12
-                        radius: 6
+                        width: 14
+                        height: 14
+                        radius: 7
                         color: "#f5f5f5"
                         border.width: 2
                         border.color: accentRed
@@ -758,6 +910,14 @@ Item {
                     Layout.preferredWidth: 56
                 }
             }
+
+            Connections {
+                target: lineProgSlider
+                function onPressedChanged() {
+                    if (lineProgSlider.pressed)
+                        playTimer.running = false
+                }
+            }
         }
     }
 
@@ -768,5 +928,13 @@ Item {
             if (viewport.pathLoaded)
                 previewRoot.syncGcodeViewToPlaybackLine()
         }
+        function onPlaybackGcodeWindowChanged() {
+            previewRoot.syncGcodeViewToPlaybackLine()
+        }
+    }
+
+    Component.onCompleted: {
+        if (viewport.pathLoaded)
+            previewRoot.syncGcodeViewToPlaybackLine()
     }
 }

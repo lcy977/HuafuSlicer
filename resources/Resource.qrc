@@ -1,0 +1,18 @@
+<RCC>
+    <qresource prefix="/icon">
+        <file>arrange_model.png</file>
+        <file>gcode.png</file>
+        <file>ic_import_gcode.svg</file>
+        <file>ic_print_infill.png</file>
+        <file>ic_print_layer_height.png</file>
+        <file>ic_print_other.png</file>
+        <file>ic_print_top_bottom.png</file>
+        <file>ic_print_wall.png</file>
+        <file>ic_profile_delete.png</file>
+        <file>ic_profile_edit.png</file>
+        <file>ic_profile_save.png</file>
+        <file>import_model.png</file>
+        <file>rotate_model.png</file>
+        <file>viewport_bg.png</file>
+    </qresource>
+</RCC>

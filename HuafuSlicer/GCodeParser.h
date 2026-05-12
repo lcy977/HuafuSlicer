@@ -12,11 +12,16 @@ enum class MoveKind : quint8 {
     Travel = 0,
     ExtrudeOuterWall,
     ExtrudeInnerWall,
+    /** 未细分的填充（旧 G 代码或无法识别时） */
     ExtrudeInfill,
     ExtrudeSkin,
     ExtrudeSupport,
     ExtrudeFiber,
     ExtrudeOther,
+    ExtrudeInfillSolid,
+    ExtrudeInfillSparse,
+    ExtrudeSupportInterface,
+    ExtrudeSkirtBrim,
 };
 
 struct Segment {

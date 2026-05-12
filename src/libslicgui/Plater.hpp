@@ -18,6 +18,7 @@
 namespace Slic3r {
 
 class AppConfig;
+class PresetBundle;
 
 namespace UndoRedo {
 enum class SnapshotType : unsigned char {
@@ -38,6 +39,9 @@ public:
 
     void set_app_config(AppConfig* config);
     AppConfig* app_config() const { return m_app_config; }
+
+    void set_preset_bundle(PresetBundle* bundle);
+    PresetBundle* preset_bundle() const { return m_preset_bundle; }
 
     /// 通过 QFileDialog 选择模型文件并导入。
     void add_file();
@@ -91,6 +95,7 @@ private:
     QString m_project_name;
     std::string m_3mf_path;
     AppConfig* m_app_config{ nullptr };
+    PresetBundle* m_preset_bundle{ nullptr };
 
     bool m_loading_project{ false };
 

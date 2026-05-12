@@ -310,17 +310,32 @@ bool MeshLoader::loadObj(const QString &path, QVector<float> &out, QString *erro
 
     QTextStream ts(&f);
     int lineNo = 0;
+    /** 无 permuted 的旧版导出注释（兼容注释中的历史产品名）曾把场景 Z-up 坐标直接写入 v；此类文件不应再套 Y-up→Z-up 置换。 */
+    bool legacyObjVertsWithoutPermutedExport = false;
+    bool exporterConventionKnown = false;
     while (!ts.atEnd()) {
         ++lineNo;
         const QString line = ts.readLine().trimmed();
-        if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
+        if (line.isEmpty())
             continue;
+        if (line.startsWith(QLatin1Char('#'))) {
+            if (!exporterConventionKnown) {
+                const bool mentionsExporter = line.contains(QStringLiteral("Youtian3D"), Qt::CaseInsensitive)
+                    || line.contains(QStringLiteral("HuafuSlicer"), Qt::CaseInsensitive);
+                if (mentionsExporter) {
+                    // 新导出注释含 “permuted”：v 行已按导入映射预置换，须走 mapObjVertex
+                    legacyObjVertsWithoutPermutedExport = !line.contains(QStringLiteral("permuted"), Qt::CaseInsensitive);
+                    exporterConventionKnown = true;
+                }
+            }
+            continue;
+        }
 
         if (line.startsWith(QLatin1String("v "))) {
             const QStringList p = line.split(u' ', Qt::SkipEmptyParts);
             if (p.size() >= 4) {
                 QVector3D v(p[1].toFloat(), p[2].toFloat(), p[3].toFloat());
-                vp.append(mapObjVertex(v));
+                vp.append(legacyObjVertsWithoutPermutedExport ? v : mapObjVertex(v));
             }
             continue;
         }
@@ -328,7 +343,7 @@ bool MeshLoader::loadObj(const QString &path, QVector<float> &out, QString *erro
             const QStringList p = line.split(u' ', Qt::SkipEmptyParts);
             if (p.size() >= 4) {
                 QVector3D n(p[1].toFloat(), p[2].toFloat(), p[3].toFloat());
-                vn.append(mapObjNormal(n));
+                vn.append(legacyObjVertsWithoutPermutedExport ? n.normalized() : mapObjNormal(n));
             }
             continue;
         }
