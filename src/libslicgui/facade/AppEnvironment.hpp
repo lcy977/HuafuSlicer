@@ -1,5 +1,5 @@
-#ifndef slic3r_GUI_AppEnvironment_hpp_
-#define slic3r_GUI_AppEnvironment_hpp_
+#ifndef libslicgui_AppEnvironment_hpp_
+#define libslicgui_AppEnvironment_hpp_
 
 #include <string>
 

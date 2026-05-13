@@ -13,18 +13,17 @@
 #include "libslic3r/Utils.hpp"
 #include "libslic3r/libslic3r.h"
 
+#include <boost/algorithm/string.hpp>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
 #include <boost/log/trivial.hpp>
+#include <boost/nowide/convert.hpp>
 
-#include <QApplication>
 #include <QFileDialog>
 #include <QMessageBox>
-#include <QProgressDialog>
 #include <QString>
 
-#include <cassert>
 #include <cmath>
 #include <exception>
 #include <regex>
@@ -35,6 +34,22 @@ namespace Slic3r {
 namespace GUI {
 
 namespace {
+
+std::string path_utf8_for_io(const fs::path& path)
+{
+#ifdef _WIN32
+    return boost::nowide::narrow(path.wstring());
+#else
+    return path.string();
+#endif
+}
+
+std::string path_extension_lower(const fs::path& path)
+{
+    std::string ext = path.extension().string();
+    boost::algorithm::to_lower(ext);
+    return ext;
+}
 
 /// 与 Orca Plater 导入分支类似的文件组合分类（用于对话框与 3MF 优先顺序）。
 enum class ImportBatchKind {
@@ -176,7 +191,11 @@ void Plater::suppress_snapshots() { ++m_snapshot_suppress_depth; }
 
 void Plater::allow_snapshots()
 {
-    assert(m_snapshot_suppress_depth > 0);
+    if (m_snapshot_suppress_depth <= 0) {
+        BOOST_LOG_TRIVIAL(warning) << "Plater::allow_snapshots: suppress depth underflow (ignored)";
+        m_snapshot_suppress_depth = 0;
+        return;
+    }
     --m_snapshot_suppress_depth;
 }
 
@@ -244,7 +263,7 @@ bool Plater::open_3mf_file(const fs::path& file_path)
         break;
     case LoadType::LoadGeometry: {
         TakeSnapshot snap(this, "Import Object");
-        load_files({ file_path }, LoadStrategy::LoadModel);
+        load_files({ file_path }, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances);
         break;
     }
     case LoadType::LoadConfig:
@@ -279,7 +298,7 @@ void Plater::load_project(const std::string& filename2, const std::string& origi
     if (originfile != "-" && originfile != "<loadall>" && originfile != "<silence>" && !originfile.empty())
         paths.emplace_back(originfile);
 
-    LoadStrategy strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig;
+    LoadStrategy strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig | LoadStrategy::AddDefaultInstances;
     if (originfile == "<silence>")
         strategy = strategy | LoadStrategy::Silence;
 
@@ -347,7 +366,7 @@ void Plater::add_file()
 
     case ImportBatchKind::SingleOther: {
         TakeSnapshot snapshot(this, snapshot_label);
-        if (!load_files(paths, LoadStrategy::LoadModel, false).empty()) {
+        if (!load_files(paths, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances, false).empty()) {
             if (project_name() == QStringLiteral("Untitled"))
                 set_project_name(QString::fromUtf8(paths[0].stem().string().c_str()));
             emit project_metadata_changed();
@@ -359,13 +378,13 @@ void Plater::add_file()
         for (size_t i = 1; i < paths.size(); ++i)
             other_file.push_back(paths[i]);
         open_3mf_file(first_file[0]);
-        if (!load_files(other_file, LoadStrategy::LoadModel).empty())
+        if (!load_files(other_file, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances).empty())
             emit project_metadata_changed();
         break;
 
     case ImportBatchKind::MultipleOther: {
         TakeSnapshot snapshot(this, snapshot_label);
-        if (!load_files(paths, LoadStrategy::LoadModel, true).empty()) {
+        if (!load_files(paths, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances, true).empty()) {
             if (project_name() == QStringLiteral("Untitled"))
                 set_project_name(QString::fromUtf8(paths[0].stem().string().c_str()));
             emit project_metadata_changed();
@@ -386,8 +405,8 @@ void Plater::add_file()
         }
         if (!first_file.empty())
             open_3mf_file(first_file[0]);
-        load_files(tmf_file, LoadStrategy::LoadModel);
-        if (!load_files(other_file, LoadStrategy::LoadModel, false).empty())
+        load_files(tmf_file, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances);
+        if (!load_files(other_file, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances, false).empty())
             emit project_metadata_changed();
         break;
     default:
@@ -407,7 +426,7 @@ bool Plater::load_files(const QStringList& filenames)
 
     for (const QString& filename : filenames) {
         const fs::path path(into_path(filename));
-        const std::string s = path.string();
+        const std::string s = path_utf8_for_io(path);
         if (std::regex_match(s, pattern_drop))
             normal_paths.push_back(path);
         else if (std::regex_match(s, pattern_gcode_drop))
@@ -470,7 +489,7 @@ bool Plater::load_files(const QStringList& filenames)
 
     case ImportBatchKind::SingleOther: {
         TakeSnapshot snapshot(this, snapshot_label);
-        if (load_files(normal_paths, LoadStrategy::LoadModel, false).empty())
+        if (load_files(normal_paths, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances, false).empty())
             res = false;
         break;
     }
@@ -479,13 +498,13 @@ bool Plater::load_files(const QStringList& filenames)
         for (size_t i = 1; i < normal_paths.size(); ++i)
             other_file.push_back(normal_paths[i]);
         open_3mf_file(first_file[0]);
-        if (load_files(other_file, LoadStrategy::LoadModel).empty())
+        if (load_files(other_file, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances).empty())
             res = false;
         break;
 
     case ImportBatchKind::MultipleOther: {
         TakeSnapshot snapshot(this, snapshot_label);
-        if (load_files(normal_paths, LoadStrategy::LoadModel, true).empty())
+        if (load_files(normal_paths, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances, true).empty())
             res = false;
         break;
     }
@@ -504,9 +523,9 @@ bool Plater::load_files(const QStringList& filenames)
         }
         if (!first_file.empty())
             open_3mf_file(first_file[0]);
-        if (!tmf_file.empty() && load_files(tmf_file, LoadStrategy::LoadModel).empty())
+        if (!tmf_file.empty() && load_files(tmf_file, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances).empty())
             res = false;
-        if (!other_file.empty() && load_files(other_file, LoadStrategy::LoadModel, false).empty())
+        if (!other_file.empty() && load_files(other_file, LoadStrategy::LoadModel | LoadStrategy::AddDefaultInstances, false).empty())
             res = false;
         break;
     default:
@@ -538,21 +557,15 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
     if (input_files.empty())
         return obj_idxs;
 
-    q->m_3mf_path = input_files[0].string();
+    q->m_3mf_path = path_utf8_for_io(input_files[0]);
 
     const bool load_model = (strategy & LoadStrategy::LoadModel);
     const bool load_config = (strategy & LoadStrategy::LoadConfig);
     const bool imperial_units = (strategy & LoadStrategy::ImperialUnits);
 
-    QProgressDialog progress(QObject::tr("正在加载…"), QString(), 0, 100, nullptr);
-    progress.setWindowModality(Qt::ApplicationModal);
-    progress.setMinimumDuration(0);
-    progress.setValue(0);
-    progress.show();
-    QApplication::processEvents();
-
     const size_t n_files = input_files.size();
     for (size_t fi = 0; fi < n_files; ++fi) {
+        (void)fi;
 #ifdef _WIN32
         fs::path path = input_files[fi];
         path.make_preferred();
@@ -560,17 +573,11 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
         const fs::path& path = input_files[fi];
 #endif
 
-        const int base_percent = int(100.0 * double(fi) / double(std::max<size_t>(1, n_files)));
-        progress.setValue(base_percent);
-        QApplication::processEvents();
-        if (progress.wasCanceled())
-            break;
-
         Model loaded;
 
         try {
-            const bool type_3mf = boost::algorithm::iends_with(path.string(), ".3mf");
-            const bool type_any_amf = !type_3mf && boost::algorithm::iends_with(path.string(), ".amf");
+            const bool type_3mf = path_extension_lower(path) == ".3mf";
+            const bool type_any_amf = !type_3mf && path_extension_lower(path) == ".amf";
 
             if (type_3mf && load_model) {
                 DynamicPrintConfig cfg_from_file;
@@ -581,7 +588,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 Semver file_version;
 
                 loaded = Model::read_from_archive(
-                    path.string(),
+                    path_utf8_for_io(path),
                     load_config ? &cfg_from_file : nullptr,
                     load_config ? &subs : nullptr,
                     en_type,
@@ -589,14 +596,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                     &plate_data,
                     &project_presets,
                     &file_version,
-                    [&progress, base_percent, fi, n_files](int stage, int cur, int tot, bool& cancel) {
-                        const float ratio = tot > 0 ? float(cur) / float(tot) : 0.f;
-                        const float inner = (float(stage) + ratio) / 14.f;
-                        const int v = base_percent + int(inner * (100 / std::max<size_t>(1, n_files)));
-                        progress.setValue(std::min(99, v));
-                        QApplication::processEvents();
-                        cancel = progress.wasCanceled();
-                    });
+                    [](int /*stage*/, int /*cur*/, int /*tot*/, bool& cancel) { cancel = false; });
 
                 for (Preset* pp : project_presets)
                     delete pp;
@@ -618,7 +618,7 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                 Semver file_version;
 
                 loaded = Model::read_from_file(
-                    path.string(),
+                    path_utf8_for_io(path),
                     nullptr,
                     nullptr,
                     strategy,
@@ -657,9 +657,6 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
             QMessageBox::critical(nullptr, QObject::tr("加载失败"), QString::fromUtf8(e.what()));
         }
     }
-
-    progress.setValue(100);
-    QApplication::processEvents();
 
     QVector<quint64> qidx;
     qidx.reserve(int(obj_idxs.size()));

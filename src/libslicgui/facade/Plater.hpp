@@ -1,5 +1,6 @@
-#ifndef slic3r_Plater_hpp_
-#define slic3r_Plater_hpp_
+#ifndef libslicgui_Plater_hpp_
+#define libslicgui_Plater_hpp_
+// wx 对应：`src/slic3r/GUI/Plater.*`（底板与导入管线）；本类为 Qt 门面，仅桥接 libslic3r::Model。
 
 #include <memory>
 #include <string>
@@ -47,10 +48,10 @@ public:
     void add_file();
 
     std::vector<size_t> load_files(const std::vector<boost::filesystem::path>& input_files,
-        LoadStrategy strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig,
+        LoadStrategy strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig | LoadStrategy::AddDefaultInstances,
         bool ask_multi = false);
     std::vector<size_t> load_files(const std::vector<std::string>& input_files,
-        LoadStrategy strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig,
+        LoadStrategy strategy = LoadStrategy::LoadModel | LoadStrategy::LoadConfig | LoadStrategy::AddDefaultInstances,
         bool ask_multi = false);
     bool load_files(const QStringList& filenames);
 

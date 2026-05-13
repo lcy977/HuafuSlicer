@@ -33,8 +33,8 @@ void bootstrap_data_dir()
     if (!data_dir().empty())
         return;
 
-    const fs::path exe_dir   = application_executable_directory();
-    const fs::path portable  = exe_dir / "data_dir";
+    const fs::path exe_dir = application_executable_directory();
+    const fs::path portable = exe_dir / "data_dir";
     if (fs::exists(portable) && fs::is_directory(portable)) {
         set_data_dir(fs::path(portable).make_preferred().string());
         BOOST_LOG_TRIVIAL(info) << "libslicgui: using portable data_dir " << data_dir();
@@ -84,7 +84,6 @@ void bootstrap_resources_dir()
         }
     }
 
-    // 最后一档：即使尚无 profiles，也固定 exe 旁的 resources，便于日志排查
     const fs::path fallback = exe_dir / "resources";
     if (fs::exists(fallback)) {
         set_resources_dir(fs::path(fallback).make_preferred().string());

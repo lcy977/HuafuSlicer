@@ -1,6 +1,8 @@
 #include "GUI_App.hpp"
 #include "AppEnvironment.hpp"
+#include "GuiWorkspaceHub.hpp"
 
+#include "libslic3r/AppConfig.hpp"
 #include "libslic3r/Config.hpp"
 #include "libslic3r/Preset.hpp"
 #include "libslic3r/PresetBundle.hpp"
@@ -10,10 +12,14 @@
 #include <exception>
 #include <memory>
 
+namespace Slic3r::GUI::Qt {
+
 GUI_App::GUI_App(QObject* parent)
     : QObject(parent)
 {
     init_app_config();
+    m_workspace_hub = new Slic3r::GUI::GuiWorkspaceHub(this);
+    m_workspace_hub->attachApplication(this);
 }
 
 GUI_App::~GUI_App()
@@ -50,11 +56,12 @@ bool GUI_App::load_preset_bundle(std::string* error_message)
 
         std::unique_ptr<Slic3r::PresetBundle> bundle(new Slic3r::PresetBundle());
         bundle->setup_directories();
-        // 非 scoped enum，枚举符在 Slic3r 命名空间（勿写 ForwardCompatibilitySubstitutionRule::，部分 MSVC 会报 C2653）
         bundle->load_presets(*m_app_config, Slic3r::EnableSystemSilent);
 
         delete m_preset_bundle;
         m_preset_bundle = bundle.release();
+        if (m_workspace_hub)
+            m_workspace_hub->syncBindingsFromApp();
         return true;
     } catch (const std::exception& ex) {
         if (error_message)
@@ -64,10 +71,20 @@ bool GUI_App::load_preset_bundle(std::string* error_message)
     }
 }
 
+QObject* GUI_App::workspaceHubObject() const
+{
+    return static_cast<QObject*>(m_workspace_hub);
+}
+
 void GUI_App::shutdown_save()
 {
-    if (m_app_config && m_app_config->dirty())
-        m_app_config->save();
+    if (m_app_config && m_app_config->dirty()) {
+        try {
+            m_app_config->save();
+        } catch (const std::exception& ex) {
+            BOOST_LOG_TRIVIAL(error) << "GUI_App::shutdown_save: AppConfig::save — " << ex.what();
+        }
+    }
 
     delete m_preset_bundle;
     m_preset_bundle = nullptr;
@@ -75,3 +92,5 @@ void GUI_App::shutdown_save()
     delete m_app_config;
     m_app_config = nullptr;
 }
+
+} // namespace Slic3r::GUI::Qt

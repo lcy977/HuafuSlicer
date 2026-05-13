@@ -39,5 +39,7 @@ target_link_libraries(libslicgui PRIVATE libslic3r Qt6::Widgets Qt6::Core Qt6::Q
 
 target_link_libraries(libslicgui PRIVATE Boost::filesystem Boost::system Boost::log)
 target_link_libraries(libslicgui PRIVATE OpenSSL::Crypto OpenSSL::SSL)
-target_include_directories(libslicgui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(libslicgui PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/facade
+)
 
