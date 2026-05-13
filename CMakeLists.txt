@@ -29,7 +29,6 @@ find_package(EXPAT REQUIRED CONFIG)
 add_subdirectory(src/libslic3r)
 include_directories(src/libslic3r)
 add_subdirectory(src/libslicgui)
-include_directories(src/libslicgui)
 
 file(GLOB_RECURSE HuafuSlicer_sources "HuafuSlicer/*.cpp")
 file(GLOB_RECURSE HuafuSlicer_headers "HuafuSlicer/*.h")
@@ -117,6 +116,11 @@ target_link_libraries(appHuafuSlicer
     PRIVATE OpenGL::GL
     PRIVATE libslic3r
     PRIVATE libslicgui
+)
+
+# 应用内 .cpp 若直接包含 libslic3r 头（如 Model.hpp → Semver.hpp → semver/semver.h），需与 libslic3r 相同的 vendored 包含根目录。
+target_include_directories(appHuafuSlicer PRIVATE
+    "${CMAKE_SOURCE_DIR}/src/third_party"
 )
 
 include(GNUInstallDirs)
