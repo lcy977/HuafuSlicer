@@ -17,6 +17,10 @@
 
 #include "GCodeParser.h"
 
+namespace Slic3r {
+class Model;
+}
+
 class ViewportRenderer;
 
 /** 一条已完成的平面测距线段（世界坐标，米） */
@@ -82,6 +86,8 @@ public:
     explicit OpenGLViewport(QQuickItem *parent = nullptr);
 
     Q_INVOKABLE void importModel(const QUrl &fileUrl);
+    /** 用 libslic3r::Model 全量重建视口网格与 meshModels 列表（与 GuiWorkspaceHub / Plater 同步）。主线程调用。 */
+    Q_INVOKABLE void syncMeshesFromSlicerModel(const Slic3r::Model* model, bool forceThroughBusy = false);
     Q_INVOKABLE void resetView();
     /** 激活模型：ctrlModifier 为 true 时切换该模型激活状态（可多选）；否则仅激活该模型并取消其余 */
     Q_INVOKABLE void setModelActive(int index, bool ctrlModifier = false);

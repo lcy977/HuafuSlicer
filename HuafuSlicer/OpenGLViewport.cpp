@@ -1,6 +1,10 @@
 #include "OpenGLViewport.h"
 #include "MeshLoader.h"
 
+#include "libslic3r/Model.hpp"
+#include "libslic3r/TriangleMesh.hpp"
+#include "admesh/stl.h"
+
 #include <QtQuick/QQuickWindow>
 #include <QtGui/QOpenGLContext>
 #include <QtGui/QOpenGLFunctions>
@@ -3131,6 +3135,97 @@ void OpenGLViewport::clearMeshSceneNoUndo()
     emit meshModelsChanged();
     update();
     if (auto *w = window())
+        w->update();
+}
+
+void OpenGLViewport::syncMeshesFromSlicerModel(const Slic3r::Model* model, bool forceThroughBusy)
+{
+    if (!model)
+        return;
+    if (!forceThroughBusy && (m_importInProgress || m_meshExportAsyncBusy || m_gcodeImportInProgress)) {
+        qWarning() << "[SlicerSync] skipped (viewport import/export busy)";
+        return;
+    }
+
+    clearMeshSceneNoUndo();
+
+    auto newBuf = std::make_shared<QVector<float>>();
+    QVector<ImportedMeshChunk> chunks;
+    int vertexOffset = 0;
+
+    for (Slic3r::ModelObject* mo : model->objects) {
+        if (!mo || !mo->has_solid_mesh())
+            continue;
+
+        Slic3r::TriangleMesh combined;
+        try {
+            combined = mo->mesh();
+        } catch (const std::exception& ex) {
+            qWarning() << "[SlicerSync] mesh() failed:" << QString::fromUtf8(mo->name.c_str()) << ex.what();
+            continue;
+        }
+
+        const indexed_triangle_set& its = combined.its;
+        if (its.indices.empty() || its.vertices.empty())
+            continue;
+
+        const int vertsBefore = vertexOffset;
+        constexpr float kMmToM = 0.001f;
+        newBuf->reserve(newBuf->size() + int(its.indices.size()) * 18);
+
+        for (size_t fi = 0; fi < its.indices.size(); ++fi) {
+            const auto& tri = its.indices[fi];
+            const stl_vertex v0 = its.vertices[tri(0)];
+            const stl_vertex v1 = its.vertices[tri(1)];
+            const stl_vertex v2 = its.vertices[tri(2)];
+            stl_vertex n = (v1 - v0).cross(v2 - v0);
+            const float len = n.norm();
+            if (len > 1e-20f)
+                n /= len;
+            else
+                n = stl_vertex(0.f, 0.f, 1.f);
+
+            auto pushV = [&](const stl_vertex& p) {
+                newBuf->append(p(0) * kMmToM);
+                newBuf->append(p(1) * kMmToM);
+                newBuf->append(p(2) * kMmToM);
+                newBuf->append(n(0));
+                newBuf->append(n(1));
+                newBuf->append(n(2));
+            };
+            pushV(v0);
+            pushV(v1);
+            pushV(v2);
+        }
+
+        vertexOffset = int(newBuf->size() / 6);
+        const int chunkVerts = vertexOffset - vertsBefore;
+        if (chunkVerts <= 0)
+            continue;
+
+        ImportedMeshChunk chunk;
+        chunk.name = QString::fromUtf8(mo->name.c_str());
+        if (chunk.name.isEmpty())
+            chunk.name = QStringLiteral("object");
+        chunk.filePath = QString::fromUtf8(mo->input_file.c_str());
+        chunk.firstVertex = vertsBefore;
+        chunk.vertexCount = chunkVerts;
+        chunk.active = false;
+        chunk.sceneVisible = true;
+        chunks.push_back(chunk);
+    }
+
+    for (int i = 0; i < chunks.size(); ++i)
+        fillGeomCenterForChunk(chunks[i], *newBuf);
+
+    m_meshChunks = std::move(chunks);
+    m_importedMeshBuf = std::move(newBuf);
+    m_importedMeshVertexCount = m_importedMeshBuf ? int(m_importedMeshBuf->size() / 6) : 0;
+    ++m_meshDataVersion;
+    ensureOneActiveModel();
+    emit meshModelsChanged();
+    update();
+    if (auto* w = window())
         w->update();
 }
 

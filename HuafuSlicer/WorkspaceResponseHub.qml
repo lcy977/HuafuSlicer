@@ -6,9 +6,9 @@ import QtQuick.Controls
  *
  * 职责：
  * - 统一连接 HuafuWorkspaceMessageHub 转发的视口信号，并驱动弹窗 / Toast / 列表状态；
- * - 管理多文件导入队列、批量导出与单模型保存/另存为等业务响应；
- * - 通过 workspaceHub.viewport 调用 OpenGLViewport（与 Main 中 Timer 赋值 scene3d 一致），
- *   通过 windowHelper 调用原生保存对话框与调试日志。
+ * - 模型导入：若注入 guiWorkspaceHub（libslicgui::GuiWorkspaceHub，来自 main 的 context property slicerWorkspace），则数据与操作在 libslic3r::Model/Plater；
+ *   否则回退为 OpenGLViewport.importModel 队列（仅预览网格，与切片数据可能不一致）；
+ * - 通过 workspaceHub.viewport 调用 OpenGLViewport，通过 windowHelper 调用原生保存对话框与调试日志。
  *
  * Main.qml 中的按钮、菜单、快捷键应优先调用本对象的接口，避免在界面各处散落重复逻辑。
  */
@@ -25,6 +25,9 @@ Item {
 
     /** 视口消息中转（已连接 OpenGLViewport 的信号） */
     required property var workspaceHub
+
+    /** libslicgui 工作区入口（可选）；属性名勿与引擎 context `slicerWorkspace` 相同，否则 Main 传入时会产生自引用绑定循环。 */
+    property var guiWorkspaceHub: null
 
     /** 原生对话框、路径与日志等桌面集成 */
     required property var windowHelper
@@ -95,21 +98,9 @@ Item {
             }
         }
 
-        /** 导入完成：失败弹窗；成功展开模型列表；并推进导入队列 */
+        /** 视口 mesh 导入完成（仅走 OpenGLViewport 队列时触发） */
         function onModelImportFinished(ok, message) {
-            if (!ok) {
-                if (importModelErrorDialog) {
-                    importModelErrorDialog.text = message
-                    importModelErrorDialog.open()
-                }
-            } else {
-                if (appRoot)
-                    appRoot.modelListPanelOpen = true
-            }
-            if (importQueue && importQueueIndex < importQueue.length) {
-                importQueueIndex += 1
-                importNext()
-            }
+            workspaceResponses.onViewportModelImportFinished(ok, message)
         }
 
         /** 视口内请求上下文菜单：映射到窗口坐标后弹出 sheet */
@@ -119,19 +110,65 @@ Item {
         }
     }
 
-    // ----- 多文件导入队列（串行，避免 C++ 端并发导入冲突） -----
+    Connections {
+        target: guiWorkspaceHub
+        enabled: guiWorkspaceHub !== null && guiWorkspaceHub !== undefined
+
+        function onModelImportFinished(ok, message) {
+            workspaceResponses.onSlicerModelImportFinished(ok, message)
+        }
+    }
+
+    // ----- 多文件导入队列（仅视口路径：串行，避免 C++ 端并发导入冲突） -----
 
     property var importQueue: []
     property int importQueueIndex: 0
 
+    /** libslicgui：导入结束反馈（不推进视口队列） */
+    function onSlicerModelImportFinished(ok, message) {
+        if (!ok) {
+            if (importModelErrorDialog) {
+                importModelErrorDialog.text = message
+                importModelErrorDialog.open()
+            }
+        } else {
+            if (appRoot)
+                appRoot.modelListPanelOpen = true
+        }
+    }
+
+    /** OpenGLViewport：导入结束 + 推进队列 */
+    function onViewportModelImportFinished(ok, message) {
+        if (!ok) {
+            if (importModelErrorDialog) {
+                importModelErrorDialog.text = message
+                importModelErrorDialog.open()
+            }
+        } else {
+            if (appRoot)
+                appRoot.modelListPanelOpen = true
+        }
+        if (importQueue && importQueueIndex < importQueue.length) {
+            importQueueIndex += 1
+            importNext()
+        }
+    }
+
     /** 文件对话框多选确定后由 Main 调用 */
     function enqueueModelImports(urlList) {
-        importQueue = urlList ? urlList.slice(0) : []
+        const list = urlList ? urlList.slice(0) : []
+        if (guiWorkspaceHub) {
+            guiWorkspaceHub.importModelUrls(list)
+            return
+        }
+        importQueue = list
         importQueueIndex = 0
         importNext()
     }
 
     function importNext() {
+        if (guiWorkspaceHub)
+            return
         if (!importQueue || importQueueIndex >= importQueue.length)
             return
         if (!scene || scene.importInProgress)

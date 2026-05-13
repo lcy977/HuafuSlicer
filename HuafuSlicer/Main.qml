@@ -34,6 +34,38 @@ ApplicationWindow {
     font.family: appSansFontStack
     font.pixelSize: 14
 
+    /** 与 libslic3r::Model 同步时：删除/清空走 slicerWorkspace，由 C++ 触发视口重建 */
+    function meshListUsesSlicerModel() {
+        return typeof slicerWorkspace !== "undefined" && slicerWorkspace !== null
+    }
+    function removeModelRowAt(idx) {
+        if (idx < 0)
+            return
+        if (meshListUsesSlicerModel())
+            slicerWorkspace.removeModelObject(idx)
+        else
+            scene3d.deleteModelAt(idx)
+    }
+    function clearAllModelsViaDataSource() {
+        if (meshListUsesSlicerModel())
+            slicerWorkspace.clearAllModelObjects()
+        else
+            scene3d.clearAllModels()
+    }
+    function deleteActiveModelsViaDataSource() {
+        if (meshListUsesSlicerModel()) {
+            const m = scene3d.meshModels
+            const arr = []
+            for (let i = 0; i < m.length; ++i) {
+                if (m[i].active)
+                    arr.push(i)
+            }
+            slicerWorkspace.removeModelObjectsByIndices(arr)
+        } else {
+            scene3d.deleteActiveModels()
+        }
+    }
+
     function panelRadius() {
         return 12
     }
@@ -81,6 +113,7 @@ ApplicationWindow {
         interval: 0
         running: true
         repeat: false
+        // 主线程：绑定 viewport；setViewport 内会在已关联 slicerWorkspace 时自动 applySlicerModelToViewport
         onTriggered: {
             workspaceHub.viewport = scene3d
             root.viewportGlReady = true
@@ -90,6 +123,7 @@ ApplicationWindow {
     /** 视口相关信号与撤销/恢复的统一入口（QML 仅连接本对象） */
     HuafuWorkspaceMessageHub {
         id: workspaceHub
+        objectName: "workspaceMessageHub"
     }
 
     WindowHelper {
@@ -357,7 +391,7 @@ ApplicationWindow {
                         workspaceResponses.meshSaveDbg("meshContextSheet 删除 row idx=" + idx)
                         meshContextSheet.close()
                         if (idx >= 0)
-                            scene3d.deleteModelAt(idx)
+                            root.removeModelRowAt(idx)
                     }
                 }
             }
@@ -490,7 +524,7 @@ ApplicationWindow {
             }
         }
 
-        onAccepted: scene3d.clearAllModels()
+        onAccepted: root.clearAllModelsViaDataSource()
     }
 
     Dialog {
@@ -596,7 +630,7 @@ ApplicationWindow {
             }
         }
 
-        onAccepted: scene3d.deleteActiveModels()
+        onAccepted: root.deleteActiveModelsViaDataSource()
     }
 
     // ---------- 全窗口背景（圆角由本层一次绘制，避免四角叠小矩形产生毛边/多出一块）----------
@@ -977,21 +1011,6 @@ ApplicationWindow {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
 
-            // 顶部导入进度条（导入时显示）
-            ProgressBar {
-                id: importProgress
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                height: 4
-                from: 0
-                to: 1
-                value: 0.5
-                indeterminate: true
-                visible: scene3d.importInProgress
-                z: 100
-            }
-
             // ----- 中间 OpenGL 渲染（全宽；准备模式下竖工具条透明叠在视口上）-----
             Rectangle {
                 anchors.top: parent.top
@@ -1010,6 +1029,7 @@ ApplicationWindow {
 
                 OpenGLViewport {
                     id: scene3d
+                    objectName: "scene3d"
                     anchors.fill: parent
                     // GL 纹理为直角；略缩进使圆角 clip 内不露直角，避免四角“多出”像素
                     anchors.margins: 2
@@ -2644,7 +2664,7 @@ ApplicationWindow {
                 z: 50
                 anchors.left: parent.left
                 anchors.leftMargin: 10
-                anchors.top: importProgress.visible ? importProgress.bottom : parent.top
+                anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.topMargin: 8
                 anchors.bottomMargin: root.viewCubeBottomReserve
@@ -2873,6 +2893,7 @@ ApplicationWindow {
         id: workspaceResponses
         appRoot: root
         workspaceHub: workspaceHub
+        guiWorkspaceHub: typeof slicerWorkspace !== "undefined" ? slicerWorkspace : null
         windowHelper: windowHelper
         meshExportSuccessToast: meshExportSuccessToast
         meshExportFailDialog: meshExportFailDialog

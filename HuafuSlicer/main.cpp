@@ -28,6 +28,11 @@
 #include "HuafuWorkspaceMessageHub.h"
 #include "WindowHelper.h"
 
+#include "GUI_App.hpp"
+#include "GuiWorkspaceHub.hpp"
+#include "Plater.hpp"
+#include "libslic3r/Thread.hpp"
+
 namespace {
 
     void logQtImageFormatsOnce()
@@ -198,6 +203,8 @@ static void fileMessageHandler(QtMsgType type, const QMessageLogContext& context
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    // libslic3r::AppConfig::save() 要求 is_main_thread_active()；wx 入口外若未调用会误判为「工作线程」并抛出 CriticalException。
+    Slic3r::save_main_thread_id();
 
     {
         QFont uiFont = app.font();
@@ -225,10 +232,19 @@ int main(int argc, char* argv[])
     qmlRegisterType<HuafuWorkspaceMessageHub>("HuafuSlicer", 1, 0, "HuafuWorkspaceMessageHub");
     qmlRegisterType<WindowHelper>("HuafuSlicer", 1, 0, "WindowHelper");
 
+    Slic3r::GUI::Qt::GUI_App guiApp(&app);
+    {
+        std::string presetErr;
+        if (!guiApp.load_preset_bundle(&presetErr)) {
+            qWarning() << "[HuafuSlicer] load_preset_bundle failed:" << QString::fromStdString(presetErr);
+        }
+    }
+
     logQtImageFormatsOnce();
     logResourceProbe();
 
     QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("slicerWorkspace"), guiApp.workspaceHubObject());
     const QString appDir = QCoreApplication::applicationDirPath();
     engine.addImportPath(appDir);
     engine.addImportPath(appDir + QStringLiteral("/qml"));
@@ -266,19 +282,20 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    // 环境变量 HUAFSLICER_SELFTEST_MESH_SAVE=1：启动约 1.5s 后自动走「另存为」对话框链路（验证原生对话框；需已导入至少一个模型）
-    if (qEnvironmentVariableIntValue("HUAFSLICER_SELFTEST_MESH_SAVE") != 0) {
-        QTimer::singleShot(1500, &app, [&engine]() {
-            const QList<QObject*> roots = engine.rootObjects();
-            if (roots.isEmpty()) {
-                qWarning() << "[MeshSave] SELFTEST no root QML object";
-                return;
-            }
-            const bool ok = QMetaObject::invokeMethod(roots.first(), "selfTestOpenNativeSaveDialog", Qt::QueuedConnection);
-            if (!ok)
-                qWarning() << "[MeshSave] SELFTEST invokeMethod selfTestOpenNativeSaveDialog failed";
-            });
-    }
-
     return app.exec();
 }
+    //if (qEnvironmentVariableIntValue("HUAFSLICER_SELFTEST_MESH_SAVE") != 0) {
+    //    QTimer::singleShot(1500, &app, [&engine]() {
+    //        const QList<QObject*> roots = engine.rootObjects();
+    //        if (roots.isEmpty()) {
+    //            qWarning() << "[MeshSave] SELFTEST no root QML object";
+    //            return;
+    //        }
+    //        const bool ok = QMetaObject::invokeMethod(roots.first(), "selfTestOpenNativeSaveDialog", Qt::QueuedConnection);
+    //        if (!ok)
+    //            qWarning() << "[MeshSave] SELFTEST invokeMethod selfTestOpenNativeSaveDialog failed";
+    //        });
+    //}
+
+    //return app.exec();
+//}
